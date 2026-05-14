@@ -1,59 +1,112 @@
 # Ports Lab
 
-Two FastAPI apps on different ports. Demonstrates port binding, multiple services on one host.
+Two FastAPI apps — both configured to bind on port 3000. This lab simulates a real port conflict and walks through diagnosing and resolving it.
 
-- `blue-app` → port 3000
-- `red-app` → port 3001
+---
 
 ## Setup
 
-Each app has its own `requirements.txt`. Run them in separate terminals.
+Both apps are configured to start on **port 3000**.
 
-### Blue app (terminal 1)
+Run the **blue** app in the background, then try to start the **red** app.
 
-```bash
-cd blue-app
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
+> Hint: search `run process in background linux`
 
-pip install -r requirements.txt
-fastapi dev main.py --port 3000
-```
+Red will fail — the lab starts here.
 
-### Red app (terminal 2)
+---
 
-```bash
-cd red-app
-python -m venv venv
-# Windows
-venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
+## Part 1: Identify the Error
 
-pip install -r requirements.txt
-fastapi dev main.py --port 3001
-```
+### Overview
 
-## Test
+Red crashed — read the error carefully.
 
-```bash
-curl http://localhost:3000/
-curl http://localhost:3001/
-```
+### Steps
 
-Expect:
-- 3000 → `{"message": "FastAPI App Color \"Blue\" Running on PORT 3000"}`
-- 3001 → `{"message": "FastAPI App Color \"Red\" Running on PORT 3001"}`
+1. Look at the error message printed by red
+2. Identify what kind of error it is
 
-## Lab Tasks
+### Hint
 
-1. Run both apps simultaneously. Hit each port.
-2. Stop blue. Try `curl http://localhost:3000/` — observe connection refused.
-3. Try starting red on port 3000 while blue runs there — observe port-in-use error.
-4. Find process bound to port:
-   - Windows: `netstat -ano | findstr :3000`
-   - macOS/Linux: `lsof -i :3000`
-5. Bind app to `0.0.0.0` vs `127.0.0.1` — test access from another device on LAN.
+Search for: `address already in use uvicorn`
+
+---
+
+## Part 2: Confirm Blue Is Running
+
+### Overview
+
+Verify that blue is actually serving traffic on the port.
+
+> Hint: search `how to send http request from terminal`
+
+---
+
+## Part 3: Identify the Problematic Port
+
+### Overview
+
+Read the error from Part 1 again and extract the port number.
+
+### Steps
+
+1. Re-read the error message
+2. Note the port number
+
+### Think About It
+
+- Which app is supposed to use that port?
+- Which app is actually holding it?
+
+---
+
+## Part 4: Find the Process Holding the Port
+
+### Overview
+
+Use system tools to find the PID of the process bound to port 3000.
+
+Note the **PID** from the output — you will need it next.
+
+> Hint: search `find process using port linux`
+
+---
+
+## Part 5: Kill the Process and Run Red
+
+### Overview
+
+Free the port by stopping the blue process, then start red in its place.
+
+### Steps
+
+1. Kill the blue process using its PID
+2. Confirm the port is now free
+3. Start the red app
+
+> Hint: search `kill process by pid linux`
+
+### Expected Behavior
+
+- red starts successfully on port 3000
+- `curl localhost:3000` returns the red app response
+
+---
+
+## Part 6: Final Fix – Run Both Apps Together
+
+### Overview
+
+Change red's port in the source code so both apps can run at the same time.
+
+### Steps
+
+1. Find where the port is defined in `red-app/main.py` and change it
+2. Start both apps
+3. Verify each app responds on its own port
+
+### Expected Output
+
+- `localhost:3000` → blue app response
+- `localhost:3001` → red app response
