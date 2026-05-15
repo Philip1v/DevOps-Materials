@@ -567,6 +567,16 @@ Demonstrate:
 
 Open the logs and explain how developers debug pipeline failures in real environments.
 
+Then fix the broken test or perform a git revert.
+
+Demonstrate:
+
+- Committing the fix
+- Push triggering a new workflow
+- Successful test pipeline execution
+
+Emphasize that the pipeline must be green again before adding deployment logic.
+
 ---
 
 ### 4.12 Adding a Second Job: Deploy
