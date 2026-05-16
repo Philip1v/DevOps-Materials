@@ -16,15 +16,19 @@ jobs:
         with:
           node-version: 22
 
-      - name: Cache npm dependencies
+      - name: Cache node_modules
+        id: cache-nm
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+          # Strategy B: cache the installed node_modules itself, not the npm download dir.
+          # On a cache hit we skip `npm ci` entirely (see the if: below).
+          path: node_modules
+          # Key on lockfile hash so a dependency change busts the cache automatically.
+          key: ${{ runner.os }}-node22-nodemodules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
+        # Only install when the cache missed. On a hit, node_modules is already restored.
+        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Lint
@@ -41,24 +45,19 @@ jobs:
         with:
           node-version: 22
 
-      - name: Cache npm dependencies
+      - name: Cache node_modules
+        id: cache-nm
         uses: actions/cache@v4
         with:
-          #? we define the cache path as ~/.npm to cache the npm dependencies
-          #? if exists, the cache will be restored before running the npm ci command
-          #?1 if the cache is not found, it will be created after running npm ci and stored for future runs
-          #? the next step will use this path to restore the cache and speed up the installation of dependencies
-          path: ~/.npm 
-          #? we generate a unique cache key based on the OS and the hash of the package-lock.json file
-          #? so it will preserve the cache for different OS and different dependency versions
-          #! EXAMPLE: linux-npm-abcdef1234567890
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          #? restore-keys is a fallback mechanism that allows the cache to be restored even if the exact key is not found
-          #! EXAMPLE: if the key linux-npm-abcdef1234567890 is not found, it will try to restore linux-npm- or npm- caches
-          restore-keys: |
-            ${{ runner.os }}-npm-
+          # Strategy B: cache the installed node_modules itself, not the npm download dir.
+          # On a cache hit we skip `npm ci` entirely (see the if: below).
+          path: node_modules
+          # Key on lockfile hash so a dependency change busts the cache automatically.
+          key: ${{ runner.os }}-node22-nodemodules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
+        # Only install when the cache missed. On a hit, node_modules is already restored.
+        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Test
@@ -78,15 +77,19 @@ jobs:
         with:
           node-version: 22
 
-      - name: Cache npm dependencies
+      - name: Cache node_modules
+        id: cache-nm
         uses: actions/cache@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+          # Strategy B: cache the installed node_modules itself, not the npm download dir.
+          # On a cache hit we skip `npm ci` entirely (see the if: below).
+          path: node_modules
+          # Key on lockfile hash so a dependency change busts the cache automatically.
+          key: ${{ runner.os }}-node22-nodemodules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
+        # Only install when the cache missed. On a hit, node_modules is already restored.
+        if: steps.cache-nm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build site

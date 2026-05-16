@@ -1504,3 +1504,568 @@ Simple classroom summary:
 Finish with the bigger idea:
 
 Good CI/CD design is not only about writing jobs and steps. It is also about controlling when automation should run, when it should wait, and when it should not run at all.
+
+---
+
+## 6. Job Artifacts and Outputs
+
+Based on Presentation 8.4
+
+### 6.1 Preparing the Workspace
+
+Explain that this chapter moves from controlling *when* workflows run to sharing *results* between jobs. Until now every job ran in isolation. In this chapter the students learn how to pass files and values from one job to another.
+
+Suggested classroom flow:
+
+1. Create a GitHub repository (suggested name: `gh-data`, public or private)
+2. Commit a `README.md`
+3. Clone the repository locally
+4. Open it in VS Code
+
+Explain that the demonstration uses a small React project that builds into a `dist/` folder. The build output is what the students will learn to share.
+
+---
+
+### 6.2 What Is a Job Artifact?
+
+Define the concept clearly.
+
+A Job Artifact is an output of a job - some product that the job created during its run.
+
+Examples of artifacts:
+
+- Static website files
+- A mobile application package
+- An executable file
+- Log files from a testing process
+
+Give a concrete scenario:
+
+Assume a job builds a website. It produces `HTML`, `CSS`, and `JS` files that need to be uploaded to a hosting provider. Those files are the artifacts of that job.
+
+Explain what can be done with artifacts:
+
+- Download them manually after the run finishes
+- Pass them to other jobs in the same workflow
+- Use them for automatic distribution, for example uploading automatically to a server or an app store
+
+---
+
+### 6.3 The Example Workflow: Deploy Website
+
+Present the big picture before writing YAML.
+
+The example workflow is triggered automatically on push to `main` and contains a chain of jobs:
+
+- `lint` - code style checks
+- `test` - automated tests
+- `build` - builds the code, produces the `dist` folder
+- `deploy` - simulated deployment
+
+Explain the responsibility of each job:
+
+- `lint` and `test` validate the code
+- `build` runs `npm run build` and produces the `dist` directory
+- `deploy` consumes the build result
+
+Emphasize that `build` depends on `lint` and `test`, and `deploy` depends on `build`. This is enforced with `needs`.
+
+Starting workflow (no artifact sharing yet):
+
+```yaml
+name: Build & Upload Artifact
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        run: npm run build
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        run: echo "Deploying"
+```
+
+---
+
+### 6.4 Why the Build Output Must Be Saved
+
+Ask the class a key question: after `build` finishes, where does the `dist` folder go?
+
+Explain the critical fact:
+
+When a job finishes, its runner is destroyed, and all files created on it are lost.
+
+So the `dist` files must be stored explicitly if we want to:
+
+- Download them manually
+- Test them locally
+- Deploy them to a server
+- Use them in other jobs
+
+Emphasize that this is exactly the problem artifacts solve.
+
+---
+
+### 6.5 Saving an Artifact with `upload-artifact`
+
+Explain that instead of running a custom script, we use the official GitHub Action `actions/upload-artifact`.
+
+Add a new step to the `build` job:
+
+```yaml
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-build
+          path: |
+            dist/
+            package.json
+          retention-days: 7 # artifact available for 7 days
+```
+
+Explain each field:
+
+- `uses` specifies the action being used
+- `@v4` pins the action version
+- `with` provides configuration
+- `name` is the artifact identifier (used later to download it)
+- `path` is the list of files or folders to save
+- `retention-days` controls how long GitHub keeps the artifact
+
+Explain the multi-path syntax:
+
+- Multiple paths can be listed using the `|` block scalar
+- Specific files can also be excluded (see GitHub documentation)
+- In this example we save the `dist` folder and `package.json` (the JSON file is included for demonstration only)
+
+---
+
+### 6.6 Seeing the Artifact in GitHub
+
+Demonstrate the flow:
+
+1. Commit the change (`added upload artifacts step`)
+2. Push to `main`
+3. The workflow runs automatically
+4. When it finishes, open the **Actions** tab and download the artifact
+
+Explain the result:
+
+- GitHub offers a downloadable artifact named `site-build`
+- It downloads as a `ZIP` file
+- After extracting it, the students see the `dist` folder with all files, plus `package.json` if it was included
+
+Improvement to discuss:
+
+- Focus the artifact only on the `dist` folder
+- Remove `package.json` from the path
+- Keep the old configuration as a comment for reference
+
+This teaches that artifacts should contain only what is actually needed.
+
+---
+
+### 6.7 Automatically Using Artifacts Between Jobs
+
+Explain the next goal: not only saving the build output, but using it automatically in the `deploy` job.
+
+Remind the students of the core reason this is needed:
+
+1. Every job in a workflow runs on a different runner
+2. Files created in a previous job do not automatically exist in the current job
+3. Therefore the artifact must be downloaded explicitly
+
+Make sure `deploy` depends on `build` so the file is uploaded before the download is attempted:
+
+```yaml
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: site-build
+
+      - name: List files
+        run: ls -la
+
+      - name: Deploy
+        run: echo "Deploying"
+```
+
+Explain:
+
+- `actions/download-artifact` is the official action for retrieving an artifact
+- The `name` must match the identifier used in the upload step (`site-build`)
+- `deploy` runs only after `build` because of `needs: build`
+
+---
+
+### 6.8 Where Are the Files After Download?
+
+Run the workflow and demonstrate with `ls`.
+
+Point out an important detail that confuses many students:
+
+1. The downloaded files are **not** placed inside a `dist/` folder
+2. Instead, the files are extracted directly into the working directory of the `deploy` job
+3. So there is no need to enter `dist/` - the files (`index.html`, `main.js`, `style.css`, ...) are used as they are
+
+Verify in the Actions tab:
+
+- The `deploy` job ran successfully
+- Files were copied from the `build` job
+- They are now available for use
+
+---
+
+### 6.9 Artifacts vs Outputs
+
+Introduce the second sharing mechanism with a simple summary:
+
+- **Artifacts = files**
+- **Outputs = values**
+
+Both allow sharing results between jobs, but in different ways.
+
+Explain when outputs are needed:
+
+Sometimes we want to pass a value between jobs, not a file. For example:
+
+- The name of a file that was created (not the file itself)
+- A date
+- A hash
+- A version identifier
+- A random value
+
+Emphasize: this is not an artifact - it is a textual or numeric value.
+
+---
+
+### 6.10 Defining a Job Output
+
+Give the concrete example used in the project.
+
+In the `build` job a JavaScript file is created inside `dist/assets`. Its name changes on every build because it contains a random hash. We want to save that filename as an output.
+
+Defining the output at the job level:
+
+```yaml
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    outputs:
+      # steps   -> all steps in the build job
+      # publish -> the step whose id is "publish"
+      # outputs -> the outputs produced by that step
+      # script-file -> the named output, used like a variable outside the job
+      script-file: ${{ steps.publish.outputs.script-file }}
+    steps:
+      # ... checkout, setup-node, npm ci, npm run build ...
+
+      - name: Publish JS filename
+        id: publish
+        run: echo "script-file=$(find dist/assets -name '*.js')" >> $GITHUB_OUTPUT
+```
+
+Explain:
+
+- `script-file` is the output name, available outside the job
+- The step with `id: publish` produces the value
+- `id` is required to access a step's output
+- `echo ... >> $GITHUB_OUTPUT` is the official syntax for writing a step output
+
+Warn the class:
+
+- An `id` is mandatory to reach a step's output
+- The old `set-output` syntax must not be used anymore
+- That syntax is deprecated and will be removed in the future
+
+---
+
+### 6.11 Using an Output in Another Job
+
+Add a step in the `deploy` job that reads the value:
+
+```yaml
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: site-build
+
+      - name: Show built file name
+        run: echo "Built JS file: ${{ needs.build.outputs.script-file }}"
+
+      - name: Deploy
+        run: echo "Deploying ${{ needs.build.outputs.script-file }}"
+```
+
+Explain `needs.build.outputs.script-file`:
+
+- `needs` gives access to data from dependency jobs only
+- `build` is the job the value is taken from
+- `script-file` is the output name as defined
+
+Explain why `needs` and not `jobs`:
+
+GitHub provides context objects:
+
+- `jobs` - general information about all jobs
+- `needs` - access to outputs of dependency jobs only
+
+So because `deploy` depends on `build`, it can reach its outputs through `needs.build.outputs`.
+
+Demonstrate: commit `added outputs`, push to `main`, and under the `deploy` job open the `Show built file name` step - the filename produced automatically in `build` appears.
+
+---
+
+### 6.12 Summary: Artifacts vs Outputs
+
+Conclude the comparison clearly.
+
+Artifacts examples:
+
+- `dist` build files
+- Log files from the `test` job
+- Distribution files (`.apk`, `.zip`, etc.)
+- Saved with `upload-artifact`, retrieved with `download-artifact`
+
+Outputs examples:
+
+- A generated filename
+- A build date
+- A commit hash
+- A random version identifier
+- Passed as values for use in other jobs
+
+The takeaway: use **artifacts for files**, **outputs for values**.
+
+Finish the chapter with the bigger idea:
+
+Sharing results between jobs - files through artifacts, values through outputs - is what turns a set of isolated jobs into a connected CI/CD pipeline.
+
+---
+
+## 7. Performance: Caching Dependencies
+
+Based on Presentation 8.4
+
+### 7.1 Why Caching Matters
+
+Explain why caching matters using the real numbers from the workflow.
+
+Each workflow currently includes:
+
+1. Checkout - fast (~1 second)
+2. `npm install` - slower:
+   - `build`: ~12 seconds
+   - `test`: ~8 seconds
+
+This step repeats in every job because each job runs on a different runner.
+
+Explain the reasoning for caching:
+
+- Most dependencies do not change often
+- Reinstalling on every run wastes time
+- Goal: keep a copy of the dependencies and reuse it
+
+The savings:
+
+- Shorter run time
+- Lower cost (if on a paid plan)
+- Faster deployment
+
+When caching is worth considering:
+
+- A stable folder containing "heavy" files exists
+- Those files are needed in every job or workflow
+- The files do not change frequently
+- Examples: `node_modules` in Node.js projects, other `build` or `cache` folders
+
+---
+
+### 7.2 The Solution: `actions/cache`
+
+Introduce the official `actions/cache` action.
+
+It allows:
+
+- Saving files/folders from one job
+- Restoring them in another job, or even in another workflow run
+
+Where caching can apply:
+
+- Between jobs in the same workflow
+- Between different runs of the workflow
+
+It is especially useful for projects with heavy dependencies that rarely change.
+
+---
+
+### 7.3 Two Caching Strategies
+
+Explain that there are two common ways to cache Node.js dependencies. The students should understand the trade-off before writing YAML.
+
+**Strategy A - cache the npm download directory.** Cache `~/.npm` and always run `npm ci`. The download is skipped (already cached) but `npm ci` still rebuilds `node_modules` from the local cache. Safe, predictable, less aggressive.
+
+This is also what `actions/setup-node` does automatically with `cache: npm` - the configuration used in the earlier chapters.
+
+**Strategy B - cache `node_modules` itself, and skip `npm ci` on a cache hit.** More aggressive: when the cache hits, `node_modules` is already restored, so `npm ci` is skipped entirely with an `if:` condition.
+
+Strategy B is faster but riskier - it assumes the restored `node_modules` is correct for the current lockfile and OS. This is acceptable for small projects where:
+
+- The dependency tree is simple
+- There are no native/compiled modules tied to the runner
+- The lockfile hash is part of the cache key (so any dependency change busts the cache)
+
+Teaching point: for small projects the skip-CI strategy is a clear win. For large projects with native modules, prefer Strategy A or rebuild from `~/.npm`.
+
+---
+
+### 7.4 Strategy B: Caching with Skip-CI
+
+Explain where to add the cache: in every job that installs dependencies (`lint`, `test`, `build`), add a cache step before `npm ci`.
+
+```yaml
+      - name: Cache node_modules
+        id: cache-nm
+        uses: actions/cache@v4
+        with:
+          # Strategy B: cache the installed node_modules itself, not the npm download dir.
+          # On a cache hit we skip `npm ci` entirely (see the if: below).
+          path: node_modules
+          # Key on lockfile hash so a dependency change busts the cache automatically.
+          key: ${{ runner.os }}-node22-nodemodules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        # Only install when the cache missed. On a hit, node_modules is already restored.
+        if: steps.cache-nm.outputs.cache-hit != 'true'
+        run: npm ci
+```
+
+Explain the fields:
+
+The cache `key` includes:
+
+- The operating system (`runner.os`)
+- A hash of the `package-lock.json` file (`hashFiles`)
+
+Walk through the `if:` line slowly - this is the core of the strategy:
+
+- `actions/cache` exposes a step output `cache-hit`
+- It is `'true'` only when the exact key was found and restored
+- `if: steps.cache-nm.outputs.cache-hit != 'true'` means: run `npm ci` **only when the cache missed**
+- On a cache hit, `node_modules` is already on disk, so installing again would be wasted work
+
+Explain how it works:
+
+- First job (for example `test`): no cache found -> `npm ci` runs -> cache is saved at job end
+- Next job (for example `build`): cache found -> `node_modules` restored -> `npm ci` skipped
+- Future runs of the same workflow: cache reused as long as `package-lock.json` did not change
+
+---
+
+### 7.5 Why Skip-CI Is Safe for Small Projects
+
+Make the safety reasoning explicit so students do not copy this blindly into every project.
+
+Skip-CI is safe here because:
+
+- The cache key contains the lockfile hash - if a dependency changes, the key changes, the cache misses, and `npm ci` runs again
+- The cache key contains `runner.os` - a `node_modules` built on Linux is never restored on a different OS
+- The project has no native/compiled dependencies that must match the exact runner
+- The project is small, so a rare stale-cache mistake is cheap to diagnose and fix
+
+When NOT to use skip-CI:
+
+- Native modules (`node-gyp`, `bcrypt`, `sharp` on some platforms) that compile against the runner
+- Monorepos with multiple lockfiles where the hash may not capture every change
+- Workflows where correctness matters more than the ~10 seconds saved - prefer Strategy A there
+
+Bottom line: skip `npm ci` on cache hit for small, pure-JS projects; rebuild from `~/.npm` for everything else.
+
+---
+
+### 7.6 Important Notes and Demonstration
+
+Emphasize the rules:
+
+- The cache step must come **before** the install step (`npm ci`)
+- This action uses a cache shared between jobs and between different runs
+- If `package-lock.json` changes, a new cache is created automatically (the lockfile hash is part of the key)
+- The `if: steps.cache-nm.outputs.cache-hit != 'true'` condition skips `npm ci` entirely on a cache hit
+
+Demonstrate at runtime using the two example workflows (`build-artifact-nocache.yaml` vs `build-artifact.yaml`):
+
+- First run of the cached workflow: cache miss, full install, cache saved
+- Second run with no dependency change: cache hit, `npm ci` skipped, noticeably faster
+- Compare side by side with the no-cache workflow to make the time difference visible
+
+Point the class to the `actions/cache` documentation for additional examples.
+
+Finish with the bigger idea:
+
+Avoiding repeated work through caching - and knowing *which* caching strategy fits the project - is what turns a correct pipeline into an efficient one.
